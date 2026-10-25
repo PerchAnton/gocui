@@ -44,7 +44,6 @@ func (g *Gui) GetTestingScreen() TestingScreen {
 //
 // cleanup := testingScreen.StartGui()
 // defer cleanup()
-//
 func (t *TestingScreen) StartGui() func() {
 	t.gui.testNotify = make(chan struct{})
 	go func() {
@@ -93,7 +92,7 @@ func (t *TestingScreen) SendKeySync(key Key) {
 // user has confirmation that all the keys sent to gocui before time event were processed.
 func (t *TestingScreen) WaitSync() {
 	ev := &tcell.EventTime{}
-	t.screen.PostEvent(ev)
+	t.screen.PostEventWait(ev)
 	<-t.gui.testNotify
 }
 
@@ -144,20 +143,18 @@ func (t *TestingScreen) GetViewContent(viewName string) (string, error) {
 	return result.String(), nil
 }
 
-// Used from Micro MIT Licensed: https://github.com/zyedidia/micro/blob/c0907bb58e35ee05202a78226a2f53909af228ca/cmd/micro/micro_test.go#L183
+// injectString preserves Unicode scalar values and ASCII control-key mappings.
+// Waiting for queue space avoids losing events when the simulation queue is full.
 func (t *TestingScreen) injectString(str string) {
-	// the tcell simulation screen event channel can only handle
-	// 10 events at once, so we need to divide up the key events
-	// into chunks of 10 and handle the 10 events before sending
-	// another chunk of events
-	iters := len(str) / 10
-	extra := len(str) % 10
-
-	for i := 0; i < iters; i++ {
-		s := i * 10
-		e := i*10 + 10
-		simulationScreen.InjectKeyBytes([]byte(str[s:e]))
+	for _, ch := range str {
+		key, mod := tcell.KeyRune, tcell.ModNone
+		if ch < 0x20 {
+			key = tcell.Key(ch)
+			ch = 0
+			if key >= tcell.KeyCtrlA && key <= tcell.KeyCtrlZ {
+				mod = tcell.ModCtrl
+			}
+		}
+		simulationScreen.PostEventWait(tcell.NewEventKey(key, ch, mod))
 	}
-
-	simulationScreen.InjectKeyBytes([]byte(str[len(str)-extra:]))
 }
